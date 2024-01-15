@@ -1,0 +1,60 @@
+# these three lines swap the stdlib sqlite3 lib with the pysqlite3 package
+__import__('pysqlite3')
+import sys
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+
+from langchain.chat_models import ChatOpenAI
+from langchain.document_loaders import UnstructuredFileLoader # UnstructuredFileLoader는 pdf, txt, docx를 다 열 수 있음
+from langchain.text_splitter import CharacterTextSplitter
+from langchain.embeddings import OpenAIEmbeddings, CacheBackedEmbeddings
+from langchain.vectorstores.faiss import FAISS
+from langchain.storage import LocalFileStore
+from langchain.prompts import ChatPromptTemplate
+from langchain.schema.runnable import RunnablePassthrough
+
+llm = ChatOpenAI(
+    temperature=0.1
+)
+
+cache_dir = LocalFileStore("../.cache/") # embedding한 vector를 캐싱하기 위해 캐쉬 디렉토리 설정
+
+splitter = CharacterTextSplitter.from_tiktoken_encoder(
+    separator="\n",
+    chunk_size=600,
+    chunk_overlap=100,
+) # 특정 문자열을 기준으로 끊어줌
+
+loader = UnstructuredFileLoader("../../files/chapter_one.docx")
+
+docs = loader.load_and_split(text_splitter=splitter)
+
+embeddings = OpenAIEmbeddings()
+
+# cache embedding을 설정함으로써 embedding을 할 때, 캐시에 embedding이 이미 존재하는지 확인하고
+# 없으면 vector store를 호출할때 문서들과 OpenAIEmbeddings를 사용하게 됨
+cached_embeddings = CacheBackedEmbeddings.from_bytes_store(
+    embeddings, cache_dir    
+)
+
+
+vectorstore = FAISS.from_documents(docs, cached_embeddings)
+
+"""
+ [retriever]
+   - retriever는 여러 장소에서 document들을 가져오는 클래스의 interface임 (vector store보다 더 일반화된 형태)
+"""
+
+"""
+  Map Reduce chain을 구현하기 위해 아래 절차를 따름
+  1) retriever에 질문을 전달
+  2) retriever는 질문과 관련된 document의 list를 얻음
+  3) list에 있는 모든 document를 위해 prompt를 만듦
+  4) prompt'들'을 전달받은 llm은 응답'들'을 반환하고 
+  5) 모든 응답들을 묶어서 하나의 document로 합침
+  6) 최종 document를 llm에 prompt로 전달하여 결과를 획득
+"""
+retriver = vectorstore.as_retriever()
+
+
+chain.invoke("Describe Victory Mansions")
+
