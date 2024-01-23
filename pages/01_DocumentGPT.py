@@ -1,4 +1,7 @@
+from typing import Any, Dict, List, Optional, Union
+from uuid import UUID
 from langchain.prompts import ChatPromptTemplate
+from langchain.schema.output import ChatGenerationChunk, GenerationChunk, LLMResult
 import streamlit as st
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.document_loaders import UnstructuredFileLoader
@@ -7,6 +10,7 @@ from langchain.embeddings import OpenAIEmbeddings, CacheBackedEmbeddings
 from langchain.schema.runnable import RunnableLambda, RunnablePassthrough
 from langchain.vectorstores.faiss import FAISS
 from langchain.chat_models import ChatOpenAI
+from langchain.callbacks.base import BaseCallbackHandler
 import os
 
 st.set_page_config(
@@ -14,8 +18,31 @@ st.set_page_config(
     page_icon="📃",
 )
 
+class ChatCallbackHandler(BaseCallbackHandler):
+    message = ""
+
+    # *args : 무수히 많은 args를 받을 수 있음 (예 : on_llm_start(1,2,3,4, ...))
+    # **kwargs : 무수히 많은 keyword arguments를 받을 수 있음 (예 : on_llm_start(a=1, b=4, ...))
+    def on_llm_start(self, *args, **kwargs):
+        # llm이 시작되면 message_box라고 이름붙인 빈 공간을 만듦
+        self.message_box = st.empty()
+    
+    def on_llm_end(self, *args, **kwargs):
+        save_message(self.message, "ai")
+    
+    def on_llm_new_token(self, token, *args, **kwargs):
+        # token : chain에서 streaming되는 글자들
+        # 새로운 token이 생성될때마다 message_box에 토큰을 추가함
+        self.message += token
+        self.message_box.markdown(self.message)
+        
+
 llm = ChatOpenAI(
     temperature=0.1,
+    streaming=True,
+    callbacks=[
+        ChatCallbackHandler(), #chain이 invoke될때 호출됨
+    ]
 )
 
 # st.cache_data 데코레이터를 이용해서 파라미터에 어떤 변화가 있지 않으면 아래 함수를 재실행하지 않고 cache의 결과를 가져오도록 함
@@ -46,11 +73,14 @@ def embed_file(file):
     retriever = vectorstore.as_retriever()
     return retriever
 
+def save_message(message, role):
+    st.session_state["messages"].append({"message":message, "role":role})
+
 def send_message(message, role, save=True):
     with st.chat_message(role):
         st.markdown(message)
     if save:
-        st.session_state["messages"].append({"message":message, "role":role})
+        save_message(message, role)
 
 def paint_history():
     for message in st.session_state["messages"]:
@@ -101,8 +131,9 @@ if file:
             "context" : retriever | RunnableLambda(format_docs),
             "question": RunnablePassthrough()
         } | prompt | llm
-        response = chain.invoke(message) # 사용자가 보내는 message가 retriever의 파라미터, 그리고 question의 값으로 들어감(RunnablePassthrough)
-        send_message(response.content, "ai")
+
+        with st.chat_message("ai"):
+            response = chain.invoke(message) # 사용자가 보내는 message가 retriever의 파라미터, 그리고 question의 값으로 들어감(RunnablePassthrough)
 
 else:
     st.session_state["messages"] = []
