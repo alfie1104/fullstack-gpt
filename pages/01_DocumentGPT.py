@@ -132,8 +132,11 @@ if file:
             "question": RunnablePassthrough()
         } | prompt | llm
 
-        with st.chat_message("ai"):
-            response = chain.invoke(message) # 사용자가 보내는 message가 retriever의 파라미터, 그리고 question의 값으로 들어감(RunnablePassthrough)
+        with st.chat_message("ai"):        
+            # ChatCallbackHandler클래스는 llm의 callback으로 등록되기때문에 llm에서 호출됨
+            # 한편, chain은 with st.chat_message("ai") 구문에서 invoke되므로
+            # ChatCallbackHander클래스에서 사용되는 st.write는  "ai" 메시지형태로 출력되게 됨
+            chain.invoke(message) # 사용자가 보내는 message가 retriever의 파라미터, 그리고 question의 값으로 들어감(RunnablePassthrough)
 
 else:
     st.session_state["messages"] = []
