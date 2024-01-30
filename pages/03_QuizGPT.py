@@ -4,6 +4,8 @@ from langchain.retrievers import WikipediaRetriever
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.document_loaders import UnstructuredFileLoader
 from langchain.chat_models import ChatOpenAI
+from langchain.prompts import ChatPromptTemplate
+from langchain.callbacks import StreamingStdOutCallbackHandler
 
 
 st.set_page_config(
@@ -15,7 +17,11 @@ st.title("QuizGPT")
 
 llm = ChatOpenAI(
     temperature=0.1,
-    model="gpt-3.5-turbo-1106"
+    model="gpt-3.5-turbo-1106", # context window의 크기가 16,385 tokens이므로 한번에 많은 내용을 처리할 수 있음(가격 : 1k토큰당 $0.001)
+    streaming=True,
+    callbacks=[
+        StreamingStdOutCallbackHandler()
+    ]
 )
 
 # st.cache_data 데코레이터를 이용해서 파라미터에 어떤 변화가 있지 않으면 아래 함수를 재실행하지 않고 cache의 결과를 가져오도록 함
@@ -41,6 +47,9 @@ def split_file(file):
     docs = loader.load_and_split(text_splitter=splitter)
     return docs # 파일을 읽어들여서 split한뒤 반환(임베딩은 하지 않았음)
 
+def format_docs(docs):
+    return "\n\n".join(document.page_content for document in docs)
+
 with st.sidebar:
     docs = None
     choice = st.selectbox("Choose what you want to use.", (
@@ -51,11 +60,14 @@ with st.sidebar:
 
         if file:
             docs = split_file(file)
-            st.write(docs)
+            
     else:
         topic = st.text_input("Search Wikipedia...")
         if topic:
-            retriever = WikipediaRetriever(top_k_results=5)
+            retriever = WikipediaRetriever(
+                top_k_results=5, 
+                # lang="ko" #한글 문서를 검색하고 싶은 경우
+                )
             with st.status("Searching Wikipedia..."):
                 docs = retriever.get_relevant_documents(topic)
 
@@ -71,4 +83,47 @@ if not docs:
     """
     )
 else:
-    st.write(docs)
+    
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                """
+                    You are a helpful assistant that is role playing as a teacher.
+                        
+                    Based ONLY on the following context make 10 questions to test the user's knowledge about the text.
+                    
+                    Each question should have 4 answers, three of them must be incorrect and one should be correct.
+                        
+                    Use (o) to signal the correct answer.
+                        
+                    Question examples:
+                        
+                    Question: What is the color of the ocean?
+                    Answers: Red|Yellow|Green|Blue(o)
+                        
+                    Question: What is the capital or Georgia?
+                    Answers: Baku|Tbilisi(o)|Manila|Beirut
+                        
+                    Question: When was Avatar released?
+                    Answers: 2007|2001|2009(o)|1998
+                        
+                    Question: Who was Julius Caesar?
+                    Answers: A Roman Emperor(o)|Painter|Actor|Model
+                        
+                    Your turn!
+                        
+                    Context: {context}
+                """,
+            )
+        ]
+    )
+
+    chain = {
+        "context" : format_docs
+    } | prompt | llm
+
+    start = st.button("Generate Quiz")
+
+    if start:
+        chain.invoke(docs)
