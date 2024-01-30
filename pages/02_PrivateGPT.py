@@ -56,7 +56,11 @@ def embed_file(file):
     with open(file_path,"wb") as f:
         f.write(file_content)
 
-    cache_dir = LocalFileStore(f"./.cache/private_embeddings/{file.name}")
+    cache_path = f"./.cache/private_embeddings/{file.name}"
+    if  not os.path.exists(cache_path):
+        os.makedirs(cache_path)
+    
+    cache_dir = LocalFileStore(cache_path)
     splitter = CharacterTextSplitter.from_tiktoken_encoder(
         separator="\n",
         chunk_size=600,
