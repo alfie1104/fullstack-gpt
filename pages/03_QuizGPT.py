@@ -13,6 +13,9 @@ import json
 class JsonOutputParser(BaseOutputParser):
     def parse(self, text):
         text = text.replace("```","").replace("json","")
+        # json문자열에서 필요없는 문자를 제거한 뒤 파이썬 객체로 만듦
+        # ```json ~~ ````이 들어간 이유 : formatting_prompt에서 Example설명시 json데이터의 도입부는 ```json로 시작하라고 했기 때문
+        # ```json으로 답변을 시작하고 ```로 끝낸다고 예시를 보여주면, AI가 "물론이지요, 기꺼이 도와줄게요! 와 같은 문구를 생략하고 바로 json형태의 데이터를 반환함"
         return json.loads(text)
     
 output_parser = JsonOutputParser()
@@ -225,6 +228,26 @@ def split_file(file):
     docs = loader.load_and_split(text_splitter=splitter)
     return docs # 파일을 읽어들여서 split한뒤 반환(임베딩은 하지 않았음)
 
+@st.cache_data(show_spinner="Making quiz...")
+def run_quiz_chain(_docs, topic):
+    """ 
+     파라미터명에 _를 붙인 이유 : streamlit이 파라미터를 해싱해서 서명을 만든 뒤 서명 값을 비교해서 파라미터가 변경되었는지 인식하는데
+     document데이터를 이용해서 서명을 만들 수 없으므로 _를 붙여서 streamlit에게 서명을 만들지 말라고 안내한 것임
+     그러면 이제 docs내용이 변경되어도 함수가 재실행되지 않는 문제가 발생함
+     그래서 topic이라는 추가 변수를 설정하여 topic이 바뀌면 함수가 실행되도록 설정하였음
+    """
+    chain = {"context": questions_chain} | formatting_chain | output_parser
+    return chain.invoke(_docs)
+
+@st.cache_data(show_spinner="Searching Wikipedia...")
+def wiki_search(term):
+    retriever = WikipediaRetriever(
+                top_k_results=5, 
+                # lang="ko" #한글 문서를 검색하고 싶은 경우
+                )
+    docs = retriever.get_relevant_documents(term)
+    return docs
+
 with st.sidebar:
     docs = None
     choice = st.selectbox("Choose what you want to use.", (
@@ -239,12 +262,7 @@ with st.sidebar:
     else:
         topic = st.text_input("Search Wikipedia...")
         if topic:
-            retriever = WikipediaRetriever(
-                top_k_results=5, 
-                # lang="ko" #한글 문서를 검색하고 싶은 경우
-                )
-            with st.status("Searching Wikipedia..."):
-                docs = retriever.get_relevant_documents(topic)
+            docs = wiki_search(topic)
 
 
 if not docs:
@@ -261,6 +279,5 @@ else:
     start = st.button("Generate Quiz")
 
     if start:
-        chain = {"context": questions_chain} | formatting_chain | output_parser
-        response = chain.invoke(docs)
+        response = run_quiz_chain(docs, topic if topic else file.name)
         st.write(response)
