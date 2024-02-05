@@ -1,4 +1,5 @@
 from langchain.document_loaders import SitemapLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 import streamlit as st
 
 import asyncio
@@ -11,12 +12,47 @@ asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy()) # window
 #  - 또한 AsyncChromiumLoader와 달리 SitemapLoader는 html 데이터를 정리해서 text만 뽑아옴(그런데 메뉴, 네비게이션 등의 텍스트들도 뽑아오기 때문에 필요없는 내용이 많음)
 #  - 너무 빠르게 scrapping을 하면 차단될 수 있으므로 default 설정으로 SitemapLoader는 1초에 한번씩 요청을 보냄
 #  - 속도르 더 줄이려면 SitemapLoader(url).requests_per_second 함수를 통해 조절할 수 있음
+#  - SitemapLoader는 page로부터 모든 text를 추출하고 html을 제거하기 위해 내부적으로 beautiful soup(soup is just bunch of html) 를 사용하고 있음.
+#  - parsing_function 속성을 설정하면 beautiful soup의 동작을 조정할 수 있음
+
+def parse_page(soup):
+    # beautiful soup가 생성하는 soup object를 이용해서 필요한 데이터만 추출
+
+    # 다음과 같이 header와 footer 태그를 찾아서 soup에서 제거할 수 있음
+    header = soup.find("header")
+    footer = soup.find("footer")
+    if header:
+        header.decompose()
+    if footer:
+        footer.decompose()
+    # return soup.get_text() # header와 footer를 제거한 나머지 text를 반환
+    
+    # soup에서 반환한 text에서 필요없는 문자들을 제거
+    return (
+        str(soup.get_text())
+        .replace("\n"," ")
+        .replace("\xa0"," ") # \xa0 : non-breaking-space
+        .replace("CloseSearch Submit Blog", "")
+    )
+
 
 @st.cache_data(show_spinner="Loading website...")
-def load_website(url):
-    loader = SitemapLoader(url)
+def load_website(url):    
+    splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+        chunk_size=1000,
+        chunk_overlap=200
+    )
+
+    loader = SitemapLoader(
+        url, 
+        # filter_urls=["https://openai.com/blog/data-partnerships"] # filter_urls를 이용하면 sitemap.xml에 있는 사이트 들 중 특정 사이트의 데이터만 가져올 수 있음
+        # filter_urls=[r"^(?!.*\/blog\/).*"] # 정규표현식을 이용해서 /blog/를 포함하지 않는 사이트만 가져옴
+        filter_urls=[r"^(.*\/blog\/).*"] # 정규표현식을 이용해서 /blog/를 포함하는 사이트만 가져옴
+        , parsing_function=parse_page # SitemapLoader가 내부적으로 사용하는 beautiful soup의 동작을 조정하기 위해서 parsing_function 속성을 사용할 수 있음
+    )
     loader.requests_per_second = 5
-    docs = loader.load()
+    # docs = loader.load()
+    docs = loader.load_and_split(text_splitter=splitter) # 긴 텍스트를 작게 잘라서 반환하도록 하기 위해 text_splittert사용
     return docs
     
 
