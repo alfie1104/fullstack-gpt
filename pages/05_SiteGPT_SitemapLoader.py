@@ -1,5 +1,7 @@
 from langchain.document_loaders import SitemapLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.vectorstores.faiss import FAISS
+from langchain.embeddings import OpenAIEmbeddings
 import streamlit as st
 
 import asyncio
@@ -44,16 +46,19 @@ def load_website(url):
     )
 
     loader = SitemapLoader(
-        url, 
-        # filter_urls=["https://openai.com/blog/data-partnerships"] # filter_urls를 이용하면 sitemap.xml에 있는 사이트 들 중 특정 사이트의 데이터만 가져올 수 있음
-        # filter_urls=[r"^(?!.*\/blog\/).*"] # 정규표현식을 이용해서 /blog/를 포함하지 않는 사이트만 가져옴
-        filter_urls=[r"^(.*\/blog\/).*"] # 정규표현식을 이용해서 /blog/를 포함하는 사이트만 가져옴
+        url 
+        # , filter_urls=["https://openai.com/blog/data-partnerships"] # filter_urls를 이용하면 sitemap.xml에 있는 사이트 들 중 특정 사이트의 데이터만 가져올 수 있음
+        # , filter_urls=[r"^(?!.*\/blog\/).*"] # 정규표현식을 이용해서 /blog/를 포함하지 않는 사이트만 가져옴
+        # , filter_urls=[r"^(.*\/blog\/).*"] # 정규표현식을 이용해서 /blog/를 포함하는 사이트만 가져옴
         , parsing_function=parse_page # SitemapLoader가 내부적으로 사용하는 beautiful soup의 동작을 조정하기 위해서 parsing_function 속성을 사용할 수 있음
     )
     loader.requests_per_second = 5
     # docs = loader.load()
     docs = loader.load_and_split(text_splitter=splitter) # 긴 텍스트를 작게 잘라서 반환하도록 하기 위해 text_splittert사용
-    return docs
+    # return docs
+
+    vector_store = FAISS.from_documents(docs, OpenAIEmbeddings()) # document를 검색에 사용하기 위해 임베딩 후 vector store에 저장
+    return vector_store.as_retriever() # vector store를 chain에서 사용하기 위해 retriever(질문 쿼리에 적합한 document를 반환해줌)로 반환(retriever는 invoke 메소드를 가지고 있어서 chain에서 실행가능함)
     
 
 st.set_page_config(
@@ -81,5 +86,8 @@ if url:
         with st.sidebar:
             st.error("Please wright down a Sitemap URL.")
     else:
-        docs = load_website(url)
+        # docs = load_website(url)
+        retriever = load_website(url) # 기존에는 load_website가 document를 그대로 반환했지만 이제 retriever로 반환
+        docs = retriever.invoke("What is the price of GPT-4 Turbo")
+
         st.write(docs)
