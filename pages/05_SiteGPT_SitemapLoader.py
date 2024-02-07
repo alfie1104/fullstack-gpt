@@ -58,15 +58,44 @@ def get_answers(inputs):
     #         "context":doc.page_content
     #     })
     #     answers.append(result.content)
-    return [
-        {
+    return { 
+        "question":question, 
+        "answers": [{
             "answer" : answers_chain.invoke({
-                    "question":question,"context":doc.page_content
+                    "question":question
+                    ,"context":doc.page_content
                 }).content,
             "source": doc.metadata["source"],
             "date" : doc.metadata["lastmod"],
-        } for doc in docs
+        } for doc in docs],
+    }
+
+choose_prompt = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """
+            Use ONLY the following pre-existing answers to answer the user's question.
+            Use the answers that have the highest score (more helpful) and favor the most recent ones.
+            Cite sources and return the sources of the answers as they are, do not change them.
+
+            Answers: {answers}
+            """,
+        ),
+        ("human", "{question}"),
     ]
+)
+
+def choose_answer(inputs):
+    answers = inputs["answers"]
+    question = inputs["question"]
+    choose_chain = choose_prompt | llm
+    condensed = "\n\n".join(f"{answer['answer']}\nSource:{answer['source']}\nDate:{answer['date']}\n" for answer in answers)    
+    
+    return choose_chain.invoke({
+        "question":question,
+        "answers":condensed
+    })
 
 def parse_page(soup):
     # beautiful soup가 생성하는 soup object를 이용해서 필요한 데이터만 추출
@@ -150,10 +179,13 @@ if url:
         # 동일한 question이 다시 question 파라미터에 할당됨
         # retriever로부터 반환받은 docs와 question 파라미터를 get_answer 함수의 입력으로 전달하여
         # get_answers는 각 doc마다 답변 및 점수를 반환함
-        chain = {
-            "docs":retriever, 
-            "question":RunnablePassthrough()
-        } | RunnableLambda(get_answers) # docs와 question이 get_answers함수의 입력으로 전달됨
-        # | RunnableLambda(choose_answer)
 
-        chain.invoke("What is the pricing of GPT-4 Turbo with vision.")
+        query = st.text_input("Ask a question to the website.")
+        if query:
+            chain = {
+                "docs":retriever, 
+                "question":RunnablePassthrough()
+                # docs와 question이 get_answers함수의 입력으로 전달됨
+            } | RunnableLambda(get_answers) | RunnableLambda(choose_answer)
+            result = chain.invoke(query)
+            st.markdown(result.content.replace("$","\$"))
