@@ -3,3 +3,6 @@ venv/
 .cache/
 .streamlit
 db_exported_data/
+
+*.mp3
+*.mp4

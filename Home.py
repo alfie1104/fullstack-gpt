@@ -16,8 +16,8 @@ Here are the apps I made:
 - [x] [DocumentGPT](/DocumentGPT)
 - [x] [PrivateGPT](/PrivateGPT)
 - [x] [QuizGPT](/QuizGPT)
-- [ ] [SiteGPT_AsyncChromiumLoader](/SiteGPT_AsyncChromiumLoader)
-- [ ] [SiteGPT_SitemapLoader](/SiteGPT_SitemapLoader)
+- [x] [SiteGPT_AsyncChromiumLoader](/SiteGPT_AsyncChromiumLoader)
+- [x] [SiteGPT_SitemapLoader](/SiteGPT_SitemapLoader)
 - [ ] [MettingGPT](/MettingGPT)
 - [ ] [InvestorGPT](/InvestorGPT)
 """
