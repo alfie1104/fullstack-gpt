@@ -74,7 +74,7 @@ with st.sidebar:
     video = st.file_uploader("Video",type=["mp4","avi","mkv","mov"],)
 
 if video:
-    with st.status("Loading video..."):
+    with st.status("Loading video...") as status:
         # file을 write binary 모드로 오픈
         video_content = video.read()
         video_path = f"./.cache/{video.name}"
@@ -83,10 +83,18 @@ if video:
         transcript_path = video_path.replace("mp4","txt")
         with open(video_path,"wb") as f:
             f.write(video_content)
-    with st.status("Extracting audio..."):
+        status.update(label="Extracting audio...")
         extract_audio_from_video(video_path, audio_path) # 비디오에서 오디오만 추출하여 xxxx.mp3에 저장
-    with st.status("Cutting audio segments..."):
+        status.update(label="Cutting audio segments...")
         cut_audio_in_chunks(audio_path,10,chunks_folder)
-    with st.status("Transcribing audio..."):
+        status.update(label="Transcribing audio...")
         transcribe_chunks(chunks_folder, transcript_path)
 
+    transcript_tab, summary_tab, qa_tab = st.tabs(["Transcript","Summary","Q&A"])
+
+    with transcript_tab:
+        with open(transcript_path, "r") as file:
+            st.write(file.read())
+
+    # summary_tab에서는 trascript파일을 Refined chain으로 요약하여 제공
+    # Refined chain : input document들을 순회하면서 답변을 계속 업데이트(여러개의 document가 있을 때 첫번째 document로 첫번째 답변을 생성하고, 두번째 document와 첫번째 답변으로 개선된 답변을 생성, 반복...)
