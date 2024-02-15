@@ -10,6 +10,10 @@ from langchain.prompts import ChatPromptTemplate
 from langchain.document_loaders import TextLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema import StrOutputParser
+from langchain.vectorstores.faiss import FAISS
+from langchain.embeddings import OpenAIEmbeddings, CacheBackedEmbeddings
+from langchain.storage import LocalFileStore
+
 
 # 사용자가 동영상을 올리면 오디오만 추출한 뒤, 오디오를 10분단위로 분할(Whisper API가 최대 10분 길이의 파일 전송만 허용하기 때문)
 # 10분 단위로 분할한 오디오 덩어리를 openAI API를 이용하여 Whisper 모델에 입력
@@ -23,6 +27,24 @@ llm = ChatOpenAI(
 )
 
 has_transcript = os.path.exists("./.cache/podcast.txt")
+
+splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+    chunk_size=800,
+    chunk_overlap=100,
+)
+
+
+# st.cache_data 데코레이터를 이용해서 파라미터에 어떤 변화가 있지 않으면 아래 함수를 재실행하지 않고 cache의 결과를 가져오도록 함
+@st.cache_data(show_spinner="Embedding file...")
+def embed_file(file_path):
+    cache_dir = LocalFileStore(f"./.cache/embeddings/{file_path}")
+    loader = TextLoader(transcript_path)
+    docs = loader.load_and_split(text_splitter=splitter)
+    embeddings = OpenAIEmbeddings()
+    cached_embeddings = CacheBackedEmbeddings.from_bytes_store(embeddings, cache_dir)
+    vectorstore = FAISS.from_documents(docs, cached_embeddings)
+    retriever = vectorstore.as_retriever()
+    return retriever
 
 @st.cache_data()
 def extract_audio_from_video(video_path, audio_path):
@@ -112,10 +134,6 @@ if video:
 
         if start:
             loader = TextLoader(transcript_path)
-            splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-                chunk_size=800,
-                chunk_overlap=100,
-            )
             docs = loader.load_and_split(text_splitter=splitter)
 
             first_summary_prompt = ChatPromptTemplate.from_template("""
@@ -147,7 +165,7 @@ if video:
 
             with st.status("Summarizing...") as status:
                 for i, doc in enumerate(docs[1:]):
-                    status.update(label=f"Processing document {i+1}/{len(docs)}")
+                    status.update(label=f"Processing document {i+1}/{len(docs)-1}")
                     # 기존 summary와 새로운 document 를 합쳐서 요약한 뒤 summary를 업데이트
                     summary = refine_chain.invoke({
                         "existing_summary":summary,
@@ -155,3 +173,9 @@ if video:
                     })
 
             st.write(summary)
+    
+    with qa_tab:
+        retriever = embed_file(transcript_path)
+        docs = retriever.invoke("do they talk about marcus aurelius?")
+
+        st.write(docs)
