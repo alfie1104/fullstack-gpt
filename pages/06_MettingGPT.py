@@ -5,6 +5,11 @@ import math
 import openai
 import glob # 디렉토리 안에서 특정한 이름을 갖는 파일을 찾을 수 있음
 import os
+from langchain.chat_models import ChatOpenAI
+from langchain.prompts import ChatPromptTemplate
+from langchain.document_loaders import TextLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.schema import StrOutputParser
 
 # 사용자가 동영상을 올리면 오디오만 추출한 뒤, 오디오를 10분단위로 분할(Whisper API가 최대 10분 길이의 파일 전송만 허용하기 때문)
 # 10분 단위로 분할한 오디오 덩어리를 openAI API를 이용하여 Whisper 모델에 입력
@@ -12,6 +17,10 @@ import os
 # 넘겨받은 내용을 chain에 입력하여 전체 대화를 요약하게 하고, 문서를 embed한 뒤 
 # 또 다른 chain에서 embed된 내용을 바탕으로 대화 내용에 대한 질문을 하도록 구성
 # whisper 자체는 오픈소스이므로 무료이지만, openAI 플랫폼에 호스팅된 버전을 사용하려면 돈을 내야함(대신 속도가 빠름, 1분에 0.006달러)
+
+llm = ChatOpenAI(
+    temperature=0.1
+)
 
 has_transcript = os.path.exists("./.cache/podcast.txt")
 
@@ -95,6 +104,54 @@ if video:
     with transcript_tab:
         with open(transcript_path, "r") as file:
             st.write(file.read())
-
-    # summary_tab에서는 trascript파일을 Refined chain으로 요약하여 제공
+    
+    # summary_tab에서는 trascript파일을 Refined chain으로 요약하여 제공 (transcript파일을 여러개의 document로 쪼갠 다음 summary를 계속 업데이트)
     # Refined chain : input document들을 순회하면서 답변을 계속 업데이트(여러개의 document가 있을 때 첫번째 document로 첫번째 답변을 생성하고, 두번째 document와 첫번째 답변으로 개선된 답변을 생성, 반복...)
+    with summary_tab:
+        start = st.button("Generate summary")
+
+        if start:
+            loader = TextLoader(transcript_path)
+            splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+                chunk_size=800,
+                chunk_overlap=100,
+            )
+            docs = loader.load_and_split(text_splitter=splitter)
+
+            first_summary_prompt = ChatPromptTemplate.from_template("""
+                Write a concise summary of the following:
+                "{text}"
+                CONCISE SUMMARY:
+            """)
+
+            first_summary_chain = first_summary_prompt | llm | StrOutputParser()
+
+            summary = first_summary_chain.invoke({
+                "text": docs[0].page_content
+            })
+
+            refine_prompt = ChatPromptTemplate.from_template(
+                """
+                Your job is to produce a final summary.
+                We have provided an existing summary up to a certain point: {existing_summary}
+                We have the opportunity to refine the existing summary (only if needed) with some more context below.
+                ------------
+                {context}
+                ------------
+                Given the new context, refine the original summary.
+                If the context isn't useful, RETURN the original summary.
+                """
+            )
+
+            refine_chain = refine_prompt | llm | StrOutputParser()
+
+            with st.status("Summarizing...") as status:
+                for i, doc in enumerate(docs[1:]):
+                    status.update(label=f"Processing document {i+1}/{len(docs)}")
+                    # 기존 summary와 새로운 document 를 합쳐서 요약한 뒤 summary를 업데이트
+                    summary = refine_chain.invoke({
+                        "existing_summary":summary,
+                        "context":doc.page_content
+                    })
+
+            st.write(summary)
