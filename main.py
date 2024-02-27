@@ -1,9 +1,13 @@
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
+import os
 
 app = FastAPI(
     title="Dante Quote Giver",
-    description="Get a real quote said by Dante himself."
+    description="Get a real quote said by Dante himself.",
+    servers=[
+        {"url":os.environ.get("CLOUDFLARED_TUNNEL_URL")}
+    ]
 )
 
 class Quote(BaseModel):
