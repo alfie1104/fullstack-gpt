@@ -31,7 +31,7 @@ user_token_db = {
     "ABCDEF":"test_token"
 }
 
-@app.get("/authorize", response_class=HTMLResponse)
+@app.get("/authorize", response_class=HTMLResponse, include_in_schema=False)
 def handle_authorize(client_id:str, redirect_uri:str, state:str):
     return f"""
     <html>
@@ -45,7 +45,7 @@ def handle_authorize(client_id:str, redirect_uri:str, state:str):
     </html>
     """
 
-@app.post("/token")
+@app.post("/token", include_in_schema=False)
 def handle_token(code = Form(...)):
     print(code)
     # OpenAI는 OAuth에 대한 return값으로 access_token이 존재하면 OAuth가 성공했다고 생각함
