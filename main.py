@@ -26,7 +26,7 @@ app = FastAPI(
     title="Chef Dante. The best provider of Indian Recipes in the world.",
     description="Give Chef Dante the name of an ingredient and it will give you multiple recipes to use that ingredient on in return.",
     servers=[
-        {"url":"https://quarters-monthly-increase-bras.trycloudflare.com "}
+        {"url":"https://fraction-guides-chemical-containers.trycloudflare.com"}
     ]
 )
 
